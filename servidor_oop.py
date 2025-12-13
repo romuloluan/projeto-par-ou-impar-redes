@@ -1,9 +1,12 @@
 import socket
+from comuns import Jogador
 
 class ServidorJogo:
     def __init__(self):
 
-        #Atributos
+        #Configurações da Rede
+
+        #"Seja um anfitrião (Host) em TODAS as interfaces de rede que este computador tiver."
         self.host=''
 
         #Define a porta no qual usaremos para o programa
@@ -11,6 +14,9 @@ class ServidorJogo:
 
         #AF_INET: Define que usaremos IP versão 4.  SOCK_STREAM: Define que usaremos TCP.
         self.server_socket= socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
+        
+        # Permite reusar a porta imediatamente (evita erro ao reiniciar pelo menu)
+        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
         # Já faz o bind e o listen assim que cria o objeto
 
@@ -20,10 +26,14 @@ class ServidorJogo:
         #Diz ao servidor quantos clientes (usuários) podem ficar aguardando uma conexão.
         self.server_socket.listen(1)
 
+        #AQUI CRIAMOS OS OBJETOS DO TIPO JOGADOR
+        self.jogador1 = Jogador()
+        self.jogador2 = Jogador()
+
         print(f"Servidor iniciado na porta {self.port}. Aguardando...")
 
 
-    def inicinar(self):
+    def iniciar(self):
         print("Aguardando Conexão...")
         #O método self.server_socket.accept() vai receber duas informações
         #1° o novo socket (onde a comunicação vai acontecer)
@@ -31,72 +41,72 @@ class ServidorJogo:
         self.socket_cliente, self.endereco_cliente = self.server_socket.accept()
         print(f"Conectado em {self.endereco_cliente}")
 
+    def receber_jogada_jogador1 (self):
+        print("Aguardando o Jogador 1 jogar!")
 
-
-    def jogar(self):
         # O .recv(1024) recebe os dados brutos enviados pelo jogador 1 --  O 1024 é o tamanho máximo do pacote (em bytes) que vamos ler de uma vez.
         # O decode() decodifica esses dados recebidos
-        self.nome_jogador1= self.socket_cliente.recv(1024).decode() #armazena o nome do jogador1 (que se conectou)
+        self.jogador1.nome = self.socket_cliente.recv(1024).decode() #armazena o nome do jogador1 (que se conectou)
         
+        # Envia o ACK para confirmar recebimento e evitar colagem de pacotes
+        self.socket_cliente.send("ACK".encode()) 
+
         #Recebe e armazena a opção escolhida (par ou impar)
-        self.opcao_jogador1= self.socket_cliente.recv(1024).decode()
+        self.jogador1.escolha= self.socket_cliente.recv(1024).decode()
+
+        # Envia o ACK para confirmar recebimento
+        self.socket_cliente.send("ACK".encode()) 
 
         #Recebe o número escolhido pelo jogador1
-        self.numero_jogador1 = int(self.socket_cliente.recv(1024).decode())
+        self.jogador1.numero = int(self.socket_cliente.recv(1024).decode())
 
-        # --- Parte do Servidor / JOGADOR 02---
-
-        print("\n--- Sua Vez ---")
-
-        print(f"Você está jogando contra {self.nome_jogador1}")
-        self.nome_jogador2 = input("Digite seu nome: ").strip().upper()
+    def realizar_jogada_jogador2(self):
+        print("\n--- Sua Vez ---\n")
+        print(f"Você está jogando contra {self.jogador1.nome}\n")
+        self.jogador2.nome = input("Digite seu nome: ").strip().upper()
         
         # Envia o nome do servidor para o cliente saber contra quem joga
-        self.socket_cliente.send(self.nome_jogador2.encode()) 
+        self.socket_cliente.send(self.jogador2.nome.encode()) 
 
-        # Define automaticamente se o servidor é Par ou Ímpar
-        if self.opcao_jogador1 == "P":
-            self.opcao_jogador2 = "I"
+        # Define automaticamente se o JOGADOR2/servidor é Par ou Ímpar
+        if self.jogador1.escolha == "P":
+            self.jogador2.escolha = "I"
             print(f"Oponente escolheu PAR. Você ficou com IMPAR.")
         else:
-            self.opcao_jogador2 = "P"
+            self.jogador2.escolha = "P"
             print(f"Oponente escolheu IMPAR. Você ficou com PAR.")
 
-        self.numero_jogador2 = int(input("Digite seu número (0-10): "))
-        
-        # --- Cálculo do Resultado ---
-        total = self.numero_jogador1 + self.numero_jogador2
-        print(f"Calculando: {self.numero_jogador1} + {self.numero_jogador2} = {total}")
+        self.jogador2.numero = int(input("Digite seu número (0-10): "))
 
-        # Verifica quem ganhou
+
+        # --- Cálculo do Resultado ---
+    def calcular_vencedor(self):
+        total = self.jogador1.numero + self.jogador2.numero
+        print(f"\nCalculando: {self.jogador1.numero} + {self.jogador2.numero} = {total}")
+
         if total % 2 == 0:
             resultado = "PAR"
-            # Se deu Par e o Jog1 escolheu Par, ele ganha. Senão, eu ganho.
-            if self.opcao_jogador1 == "P":
-                vencedor = self.nome_jogador1
-            else:
-                vencedor = self.nome_jogador2
+            vencedor = self.jogador1.nome if self.jogador1.escolha == "P" else self.jogador2.nome
         else:
             resultado = "IMPAR"
-            if self.opcao_jogador1 == "I":
-                vencedor = self.nome_jogador1
-            else:
-                vencedor = self.nome_jogador2
+            vencedor = self.jogador1.nome if self.jogador1.escolha == "I" else self.jogador2.nome
         
-
-
-        # --- Finalização ---
-        msg_final = f"Deu {resultado}. Vencedor: {vencedor}"
+        # --- ATUALIZAÇÃO AQUI ---
+        # Mensagem detalhada com o número do J2, a soma e o vencedor
+        msg_final = (f"\n--- PLACAR ---\n"
+                     f"Oponente jogou: {self.jogador2.numero}\n"
+                     f"Soma: {total} ({resultado})\n"
+                     f"VENCEDOR: {vencedor}")
+        
         print(msg_final)
-        
-        # Envia o veredito final para o cliente
         self.socket_cliente.send(msg_final.encode())
 
 
-
-
-# Bloco principal para testar
-if __name__ == "__main__":
-    jogo = ServidorJogo() # Aqui ele chama o __init__
-    jogo.inicinar() #Chama o método que vai receber os dados do outro jogador "cliente"
-    jogo.jogar()
+    # Organiza a ordem das coisas
+    def jogar(self):
+        self.receber_jogada_jogador1()
+        self.realizar_jogada_jogador2()
+        self.calcular_vencedor()
+        
+        # Fecha o socket do cliente específico ao terminar a rodada
+        self.socket_cliente.close()
